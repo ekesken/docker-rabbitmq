@@ -58,7 +58,7 @@ else:
     time.sleep(10)
     subprocess.call(['rabbitmqctl', 'stop_app'])
     subprocess.call(['rabbitmqctl', 'reset'])
-    subprocess.call(['rabbitmqctl', 'join_cluster', '--ram', 'rabbit@%s' % current_cluster])
+    subprocess.call(['rabbitmqctl', 'join_cluster', 'rabbit@%s' % current_cluster])
     subprocess.call(['rabbitmqctl', 'start_app'])
     time.sleep(10)
 
