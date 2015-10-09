@@ -1,9 +1,8 @@
 FROM rabbitmq:3.5-management
 
-ENV CLUSTER_NODES="'rabbit@localhost'" \
-  NODE_NAME='rabbit@localhost'
+RUN apt-get update && apt-get install -y python python-dev python-pip
+RUN pip install marathon
 
-COPY env-entrypoint.sh /env-entrypoint.sh
-RUN chmod +x /env-entrypoint.sh
+ADD ./rabbitmq-cluster.py /rabbitmq-cluster.py
 
-ENTRYPOINT ["/env-entrypoint.sh"]
+CMD /rabbitmq-cluster.py
