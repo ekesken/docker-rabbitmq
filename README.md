@@ -1,2 +1,2 @@
 # docker-rabbitmq
-docker image for mongo that is configurable via enviroment variables
+docker image to deploy rabbitmq cluster on mesos with one marathon app.
