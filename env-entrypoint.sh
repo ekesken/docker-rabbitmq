@@ -39,4 +39,4 @@ cat <<EOF >/etc/rabbitmq/rabbitmq.config
 NODENAME=$NODE_NAME
 EOF
 
-/docker-entrypoint.sh
+/docker-entrypoint.sh $@
