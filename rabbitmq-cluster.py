@@ -39,8 +39,10 @@ def get_other_node_ips():
                 if task['id'] != MESOS_TASK_ID:
                     # for private ips like in calico network, use ip per task
                     # see https://mesosphere.github.io/marathon/docs/ip-per-task.html
-                    if 'ipAddresses' in task and 'ipAddress' in task['ipAddresses']:
-                        node_ip = task['ipAddresses']['ipAddress']
+                    if 'ipAddresses' in task:
+                        if len(task['ipAddresses']) > 0:
+                            node_ip = task['ipAddresses'][0]['ipAddress']
+                            LOGGER.info('Task ip is %s, slave ip is %s', node_ip, task['host'])
                     LOGGER.info('Found started task %s at %s', task['id'], node_ip)
                     node_ips.append(node_ip)
     return node_ips
