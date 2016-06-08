@@ -46,8 +46,8 @@ def get_node_ips():
 
                 LOGGER.info('Found started task %s at %s', task['id'], node_ip)
                 if task['id'] == MESOS_TASK_ID:
-                    LOGGER.info('My own ip/hostname is %s', my_ip)
                     my_ip = node_ip
+                    LOGGER.info('My own ip/hostname is %s', my_ip)
                 else:
                     other_ips.append(node_ip)
     return my_ip, other_ips
