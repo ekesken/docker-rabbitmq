@@ -3,50 +3,85 @@ import logging
 import os
 import subprocess
 import time
-import urllib3
-import json
+import socket
+import requests
 
 
 LOGGER = logging.getLogger(__name__)
 APP_ID = os.getenv('MARATHON_APP_ID')
-MARATHON_URI = os.environ.get('MARATHON_URI', 'http://leader.mesos:8080')
+MESOS_TASK_ID = os.getenv('MESOS_TASK_ID')
+MARATHON_URI = os.environ.get('MARATHON_URI', 'http://marathon.mesos:8080')
 HOST_IP = os.getenv('HOST', '127.0.0.1')
 HOST_NAME = os.getenv('HOSTNAME')  # docker container_id
 
 
+def get_marathon_app(app_id):
+    response = requests.get('%s/v2/apps%s' % (MARATHON_URI, app_id))
+    state = response.json()
+    return state['app']
+
+
 def get_marathon_tasks(app_id):
-    http = urllib3.PoolManager()
-    response = http.request('GET', '%s/v2/apps%s/tasks' % (MARATHON_URI, app_id))
-    state = json.loads(response.data)
+    response = requests.get('%s/v2/apps%s/tasks' % (MARATHON_URI, app_id))
+    state = response.json()
     return state['tasks']
 
 
-def get_cluster_node_ips():
+def get_other_node_ips():
     node_ips = []
     if MARATHON_URI:
         LOGGER.info('Discovering configuration from %s for app %s', MARATHON_URI, APP_ID)
         tasks = get_marathon_tasks(APP_ID)
         LOGGER.info('Found %d tasks for %s', len(tasks), APP_ID)
         for task in tasks:
-            if task['startedAt'] and task['host'] != HOST_IP:
-                node_ips.append(task['host'])
+            if task['startedAt']:
+                node_ip = task['host']
+                if task['id'] != MESOS_TASK_ID:
+                    # for private ips like in calico network, use ip per task
+                    # see https://mesosphere.github.io/marathon/docs/ip-per-task.html
+                    if 'ipAddresses' in task and 'ipAddress' in task['ipAddresses']:
+                        node_ip = task['ipAddresses']['ipAddress']
+                    LOGGER.info('Found started task %s at %s', task['id'], node_ip)
+                    node_ips.append(node_ip)
     return node_ips
 
 
-def get_cluster_master_node_ip(node_ips):
-    master_node_ip = None
-    if len(node_ips) > 0:
-        master_node_ip = node_ips[0]
-        LOGGER.info('Found master node %s' % master_node_ip)
-    return master_node_ip
+def wait_for_nodes_to_start():
+    while True:
+        current_app = get_marathon_app(APP_ID)
+        configured_count = current_app['instances']
+        running_count = current_app['tasksRunning']
+        if running_count == configured_count:
+            break
+        LOGGER.info('%s is configured to have %d tasks,'
+                    ' there are %d running tasks now,'
+                    ' waiting for one minute...',
+                    APP_ID, running_count, configured_count)
+        time.sleep(60)
+    LOGGER.info('%s has %d running tasks now', APP_ID, running_count)
+
+
+def is_ip(ip):
+    try:
+        socket.inet_aton(ip)
+        return True
+    except socket.eror:
+        return False
+
+
+def get_node_name(node_ip):
+    node_name = node_ip
+    if is_ip(node_ip):
+        node_name = node_ip.replace('.', '-')
+    return node_name
 
 
 def configure_name_resolving(node_ips=None):
     LOGGER.info('Adding extra entries to /etc/hosts...')
     current_node_ip = HOST_IP
-    current_node_hostname = current_node_ip.replace('.', '-')
+    current_node_hostname = get_node_name(current_node_ip)
     with open('/etc/hosts', 'a') as f:
-        LOGGER.info('Adding current node entries')
+        LOGGER.info('Adding current node entries...')
         host_name_entry = '127.0.0.1 %s' % HOST_NAME
         f.write(host_name_entry + '\n')
         LOGGER.info('+' + host_name_entry)
@@ -54,13 +89,20 @@ def configure_name_resolving(node_ips=None):
         f.write(current_host_entry + '\n')
         LOGGER.info('+' + current_host_entry)
         if node_ips:
-            LOGGER.info('Adding other node entries')
+            LOGGER.info('Adding other node entries...')
             for node_ip in node_ips:
                 if node_ip != current_node_ip:
-                    node_hostname = node_ip.replace('.', '-')
+                    if not is_ip(node_ip):
+                        # if mesos slaves using hostname instead of ip
+                        # no need to add anything to /etc/hosts
+                        # docker container is expected to resolve
+                        # mesos-slave hostnames already.
+                        LOGGER.info('Skipping %s, not an ip', node_ip)
+                        continue
+                    node_hostname = get_node_name(node_ip)
                     node_host_entry = '%s %s' % (node_ip, node_hostname)
                     f.write(node_host_entry + '\n')
-                    LOGGER.info('+%s' + node_host_entry)
+                    LOGGER.info('+' + node_host_entry)
     LOGGER.info('Changing hostname as %s...', current_node_hostname)
     os.putenv('HOSTNAME', current_node_hostname)
     return current_node_hostname
@@ -112,7 +154,7 @@ def create_rabbitmq_config_file(node_ips=None):
         f.write('     {default_vhost, <<"%s">>},\n' % default_vhost)
         f.write('     {cluster_nodes, {[\n')
         if node_ips:
-            nodes_str = ','.join(["'rabbit@%s'" % n.replace('.', '-')
+            nodes_str = ','.join(["'rabbit@%s'" % get_node_name(n)
                                   for n in node_ips])
             f.write('      %s\n' % nodes_str)
         f.write('      ], disc}}\n')
@@ -133,14 +175,10 @@ def configure_rabbitmq(current_node_hostname, node_ips):
 
 
 def run():
-    node_ips = get_cluster_node_ips()
+    wait_for_nodes_to_start()
+    node_ips = get_other_node_ips()
     current_node_hostname = configure_name_resolving(node_ips)
     configure_rabbitmq(current_node_hostname, node_ips)
-    master_node_ip = get_cluster_master_node_ip(node_ips)
-    if not master_node_ip:
-        LOGGER.info("There is no other node, running as master node...")
-    else:
-        LOGGER.info("Master node %s detected, connecting to master...", master_node_ip)
     subprocess.call(['rabbitmq-server'])
 
 

@@ -47,3 +47,25 @@ Marathon config example:
 }
 
 ```
+
+## Calico Networks
+
+Calica network example settings:
+
+```
+  ...
+  "container": {
+    "type": "DOCKER",
+    "docker": {
+      "image": "ekesken/rabbitmq",
+      "forcePullImage": true,
+      "parameters": [
+        {"key": "net", "value": "calico-net1"}
+       ]
+    }
+  },
+  "ipAddress": {"discovery": {"ports": [
+    { "number": 5672, "name": "rabbitmq-node-port", "protocol": "tcp"},
+    { "number": 15672, "name": "rabbitmq-management-port", "protocol": "tcp"}
+  ]}},
+```
