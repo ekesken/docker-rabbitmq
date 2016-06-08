@@ -27,8 +27,9 @@ def get_marathon_tasks(app_id):
     return state['tasks']
 
 
-def get_other_node_ips():
-    node_ips = []
+def get_node_ips():
+    my_ip = ''
+    other_ips = []
     if MARATHON_URI:
         LOGGER.info('Discovering configuration from %s for app %s', MARATHON_URI, APP_ID)
         tasks = get_marathon_tasks(APP_ID)
@@ -36,16 +37,20 @@ def get_other_node_ips():
         for task in tasks:
             if task['startedAt']:
                 node_ip = task['host']
-                if task['id'] != MESOS_TASK_ID:
-                    # for private ips like in calico network, use ip per task
-                    # see https://mesosphere.github.io/marathon/docs/ip-per-task.html
-                    if 'ipAddresses' in task:
-                        if len(task['ipAddresses']) > 0:
-                            node_ip = task['ipAddresses'][0]['ipAddress']
-                            LOGGER.info('Task ip is %s, slave ip is %s', node_ip, task['host'])
-                    LOGGER.info('Found started task %s at %s', task['id'], node_ip)
-                    node_ips.append(node_ip)
-    return node_ips
+                # for private ips like in calico network, use ip per task
+                # see https://mesosphere.github.io/marathon/docs/ip-per-task.html
+                if 'ipAddresses' in task:
+                    if len(task['ipAddresses']) > 0:
+                        node_ip = task['ipAddresses'][0]['ipAddress']
+                        LOGGER.info('Task ip is %s, slave ip is %s', node_ip, task['host'])
+
+                LOGGER.info('Found started task %s at %s', task['id'], node_ip)
+                if task['id'] == MESOS_TASK_ID:
+                    LOGGER.info('My own ip/hostname is %s', my_ip)
+                    my_ip = node_ip
+                else:
+                    other_ips.append(node_ip)
+    return my_ip, other_ips
 
 
 def wait_for_nodes_to_start():
@@ -58,7 +63,7 @@ def wait_for_nodes_to_start():
         LOGGER.info('%s is configured to have %d tasks,'
                     ' there are %d running tasks now,'
                     ' waiting for one minute...',
-                    APP_ID, running_count, configured_count)
+                    APP_ID, configured_count, running_count)
         time.sleep(60)
     LOGGER.info('%s has %d running tasks now', APP_ID, running_count)
 
@@ -78,9 +83,8 @@ def get_node_name(node_ip):
     return node_name
 
 
-def configure_name_resolving(node_ips=None):
+def configure_name_resolving(current_node_ip, other_node_ips=None):
     LOGGER.info('Adding extra entries to /etc/hosts...')
-    current_node_ip = HOST_IP
     current_node_hostname = get_node_name(current_node_ip)
     with open('/etc/hosts', 'a') as f:
         LOGGER.info('Adding current node entries...')
@@ -90,9 +94,9 @@ def configure_name_resolving(node_ips=None):
         current_host_entry = '127.0.0.1 %s' % current_node_hostname
         f.write(current_host_entry + '\n')
         LOGGER.info('+' + current_host_entry)
-        if node_ips:
+        if other_node_ips:
             LOGGER.info('Adding other node entries...')
-            for node_ip in node_ips:
+            for node_ip in other_node_ips:
                 if node_ip != current_node_ip:
                     if not is_ip(node_ip):
                         # if mesos slaves using hostname instead of ip
@@ -178,9 +182,9 @@ def configure_rabbitmq(current_node_hostname, node_ips):
 
 def run():
     wait_for_nodes_to_start()
-    node_ips = get_other_node_ips()
-    current_node_hostname = configure_name_resolving(node_ips)
-    configure_rabbitmq(current_node_hostname, node_ips)
+    my_ip, other_ips = get_node_ips()
+    current_node_hostname = configure_name_resolving(my_ip, other_ips)
+    configure_rabbitmq(current_node_hostname, other_ips)
     subprocess.call(['rabbitmq-server'])
 
 
