@@ -148,9 +148,12 @@ def create_rabbitmq_config_file(node_ips=None):
     default_user = os.getenv('RABBITMQ_DEFAULT_USER', 'guest')
     default_pass = os.getenv('RABBITMQ_DEFAULT_PASS', 'guest')
     default_vhost = os.getenv('RABBITMQ_DEFAULT_VHOST', '/')
+    net_ticktime = os.getenv('RABBITMQ_NET_TICKTIME', '60')
+    cluster_partition_handling = os.getenv('RABBITMQ_CLUSTER_PARTITION_HANDLING', 'ignore')
     rabbitmq_management_port = os.getenv('RABBITMQ_MANAGEMENT_PORT', '/')
     with open(rabbitmq_config_file, 'w') as f:
         f.write('[\n')
+        f.write('  {kernel, [{net_ticktime,  %s}]},\n' % net_ticktime)
         f.write('  {rabbit,\n')
         f.write('    [\n')
         f.write('     {loopback_users, []},\n')
@@ -158,6 +161,7 @@ def create_rabbitmq_config_file(node_ips=None):
         f.write('     {default_user, <<"%s">>},\n' % default_user)
         f.write('     {default_pass, <<"%s">>},\n' % default_pass)
         f.write('     {default_vhost, <<"%s">>},\n' % default_vhost)
+        f.write('     {cluster_partition_handling, %s},\n' % cluster_partition_handling)
         f.write('     {cluster_nodes, {[\n')
         if node_ips:
             nodes_str = ','.join(["'rabbit@%s'" % get_node_name(n)
