@@ -10,9 +10,11 @@ ENV RABBITMQ_ERLANG_COOKIE= \
   RABBITMQ_CLUSTER_PARTITION_HANDLING=ignore \
   ERL_EPMD_PORT=4369 \
   RABBITMQ_MANAGEMENT_PORT=15672 \
-  MARATHON_URI=http://marathon.mesos:8080
+  MARATHON_URI=http://marathon.mesos:8080 \
+  RABBITMQ_VM_MEM_HW_ABSOLUTE=0
 
-RUN apt-get update && apt-get install -y python python-pip
+
+RUN apt-get update && apt-get install -y python python-pip openssl
 
 RUN chown -R rabbitmq:rabbitmq /var/lib/rabbitmq
 ADD ./rabbitmq-cluster.py /rabbitmq-cluster.py
