@@ -151,6 +151,9 @@ def create_rabbitmq_config_file(node_ips=None):
     net_ticktime = os.getenv('RABBITMQ_NET_TICKTIME', '60')
     cluster_partition_handling = os.getenv('RABBITMQ_CLUSTER_PARTITION_HANDLING', 'ignore')
     rabbitmq_management_port = os.getenv('RABBITMQ_MANAGEMENT_PORT', '/')
+    vm_mem_hw_absolute = os.getenv('RABBITMQ_VM_MEM_HW_ABSOLUTE', '0')
+    if vm_mem_hw_absolute == '0':
+        vm_mem_hw_absolute = None
     with open(rabbitmq_config_file, 'w') as f:
         f.write('[\n')
         f.write('  {kernel, [{net_ticktime,  %s}]},\n' % net_ticktime)
@@ -163,6 +166,8 @@ def create_rabbitmq_config_file(node_ips=None):
         f.write('     {default_vhost, <<"%s">>},\n' % default_vhost)
         f.write('     {cluster_partition_handling, %s},\n' % cluster_partition_handling)
         f.write('     {cluster_nodes, {[\n')
+        if vm_mem_hw_absolute:
+            f.write('     {vm_memory_high_watermark, {absolute, "%s"}}\n' % vm_mem_hw_absolute)
         if node_ips:
             nodes_str = ','.join(["'rabbit@%s'" % get_node_name(n)
                                   for n in node_ips])
